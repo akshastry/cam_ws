@@ -33,7 +33,7 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
 
 
 add_executable(capture src/test_capture.cpp)
-add_executable(video_object_detect src/video_object_detect_sift_homography_rejection_undistort_pose2_tracking.cpp)
+add_executable(video_object_detect src/video_object_detect_sift_homography_rejection_undistort_pose2_tracking_newcam.cpp)
 add_executable(focus src/video_focus.cpp)
 
 target_link_libraries(capture ${OpenCV_LIBRARIES} ${catkin_LIBRARIES})

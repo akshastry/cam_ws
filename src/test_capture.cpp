@@ -23,9 +23,9 @@ int main( int argc, char** argv ){
     return -1;
   }
   cap.set(CAP_PROP_FPS, 60.0); 
-  cap.set(CAP_PROP_FRAME_WIDTH,1280);
-  cap.set(CAP_PROP_FRAME_HEIGHT,720);
-  cap.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M','J','P','G'));
+  cap.set(CAP_PROP_FRAME_WIDTH,1920);
+  cap.set(CAP_PROP_FRAME_HEIGHT,1200);
+  // cap.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M','J','P','G'));
   int img_width = cap.get(CAP_PROP_FRAME_WIDTH);
   int img_height = cap.get(CAP_PROP_FRAME_HEIGHT);
 
@@ -38,19 +38,19 @@ int main( int argc, char** argv ){
   //      [  0  fy  cy ]
   //      [  0   0   1 ]
   Mat K_matrix = Mat::zeros(3, 3, CV_64FC1);
-  K_matrix.at<double>(0, 0) = 964.8946; //fx, std_dev +- 0.6325     
-  K_matrix.at<double>(1, 1) = 969.9548; //fy, std_dev +- 0.6160     
-  K_matrix.at<double>(0, 2) = 614.5199; //cx, std_dev +- 0.8976     
-  K_matrix.at<double>(1, 2) = 452.0068; //cy, std_dev +- 0.7236
+  K_matrix.at<double>(0, 0) = 1028.7226; //fx, std_dev +- 0.4608     
+  K_matrix.at<double>(1, 1) = 1028.8745; //fy, std_dev +- 0.4441     
+  K_matrix.at<double>(0, 2) = 978.0923; //cx, std_dev +- 0.2824     
+  K_matrix.at<double>(1, 2) = 584.8527; //cy, std_dev +- 0.2573
   K_matrix.at<double>(2, 2) = 1;
 
   // radial distortion coefficients
   Mat distCoeffs = Mat::zeros(5, 1, CV_64FC1); 
-  distCoeffs.at<double>(0) = -0.37491173; //k1, std_dev +- 0.00199622
-  distCoeffs.at<double>(1) = +0.23393262; //k2, std_dev +- 0.00919023
-  distCoeffs.at<double>(2) = -0.00222111; //p1, std_dev +- 0.00013275
-  distCoeffs.at<double>(3) = +0.00183102; //p2, std_dev +- 0.00010322
-  distCoeffs.at<double>(4) = -0.10912843; //k3, std_dev +- 0.01173290
+  distCoeffs.at<double>(0) = -0.34052699; //k1, std_dev +- 0.00036051
+  distCoeffs.at<double>(1) = +0.13226244; //k2, std_dev +- 0.00038455
+  distCoeffs.at<double>(2) = -0.0; //p1, std_dev +- 0.000
+  distCoeffs.at<double>(3) = +0.0; //p2, std_dev +- 0.000
+  distCoeffs.at<double>(4) = -0.02500858; //k3, std_dev +- 0.00012857
 
   //for displaying matches
   namedWindow("frame", WINDOW_NORMAL);
