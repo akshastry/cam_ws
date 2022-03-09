@@ -22,6 +22,8 @@ find_package(OpenCV ${_opencv_version} REQUIRED
   CONFIG
 )
 
+find_package(Armadillo REQUIRED)
+
 catkin_package(
 	INCLUDE_DIRS include
 	DEPENDS OpenCV
@@ -29,16 +31,18 @@ catkin_package(
 
 message(STATUS "STarting")
 link_directories(${OpenCV_LIBRARY_DIRS} src/parallel_sift/)
-include_directories(include ${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${ARMADILLO_INCLUDE_DIRS})
 
 
 add_executable(capture src/test_capture.cpp)
-add_executable(video_object_detect src/video_object_detect_sift_homography_rejection_undistort_pose2_tracking_newcam.cpp)
+add_executable(video_object_detect src/video_object_detect_sift_homography_rejection_undistort_pose2_tracking_newcam_acceleration.cpp)
 add_executable(focus src/video_focus.cpp)
+add_executable(arma src/arma_test.cpp)
 
 target_link_libraries(capture ${OpenCV_LIBRARIES} ${catkin_LIBRARIES})
-target_link_libraries(video_object_detect ${OpenCV_LIBRARIES} ${catkin_LIBRARIES})
+target_link_libraries(video_object_detect ${OpenCV_LIBRARIES} ${catkin_LIBRARIES} ${ARMADILLO_LIBRARIES})
 target_link_libraries(focus ${OpenCV_LIBRARIES} ${catkin_LIBRARIES})
+target_link_libraries(arma ${OpenCV_LIBRARIES} ${catkin_LIBRARIES} ${ARMADILLO_LIBRARIES})
 
 install(
   DIRECTORY include/${PROJECT_NAME}/

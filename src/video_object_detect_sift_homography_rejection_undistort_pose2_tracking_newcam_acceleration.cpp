@@ -10,7 +10,8 @@
 #include "opencv2/xfeatures2d.hpp"
 
 #include "ros/ros.h"
-#include "geometry_msgs/Pose.h"
+#include "nav_msgs/Odometry.h"
+#include "geometry_msgs/Vector3.h"
 
 #include <chrono>
 
@@ -23,11 +24,26 @@ using namespace cv::xfeatures2d;
 void readme();
 void Kalman_Filter(Mat &, Mat &, const double, const double, const double, const double, const double, const double);
 void Kalman_predict(Mat &, Mat &, const double, const double, const double, const double);
+bool isRotationMatrix(Mat &);
+Vec3f rotationMatrixToEulerAngles(Mat &);
+
+double aX = 0.0, aY = 0.0, aZ = 0.0;
+auto accel_read_time = std::chrono::high_resolution_clock::now();
+void accel_callback(const geometry_msgs::Vector3::ConstPtr& msg)
+{
+  aX = msg->x;
+  aY = msg->y;
+  aZ = msg->z;
+  
+  accel_read_time = std::chrono::high_resolution_clock::now();
+}
 
 int main( int argc, char** argv ){
 
   if (argc != 3 )
   { readme(); return -1; }
+
+  double pi = 4*atan(1.0);
 
   // image of model
   Mat img_object = imread( String("/home/aero/Desktop/cam_ws/src/Tracker/images/")+ String(argv[2]) + String(".png"), IMREAD_GRAYSCALE );
@@ -61,8 +77,8 @@ int main( int argc, char** argv ){
 
   // 3D image corners for PnP
   vector<Point3f> obj_corners3D(4);
-  obj_corners3D[0] = Point3f(0, 0, 0); obj_corners3D[1] = Point3f( 0, img_width_length, 0);
-  obj_corners3D[2] = Point3f(img_height_length, img_width_length, 0); obj_corners3D[3] = Point3f( img_height_length, 0, 0);
+  obj_corners3D[0] = Point3f(0, 0, 0); obj_corners3D[1] = Point3f( 0, -img_width_length, 0);
+  obj_corners3D[2] = Point3f(img_height_length, -img_width_length, 0); obj_corners3D[3] = Point3f( img_height_length, 0, 0);
 
   // Initialize surf detector and extract features from the model image, containers for scene image features also created
   Ptr<SIFT> detector = SIFT::create( );
@@ -120,14 +136,15 @@ int main( int argc, char** argv ){
   // for solvePnP
   Mat rvec = Mat::zeros(3, 1, CV_64FC1);          // output rotation vector
   Mat tvec = Mat::zeros(3, 1, CV_64FC1);          // output translation vector
+  Mat rvec_filt = Mat::zeros(3, 1, CV_64FC1); 
   bool useExtrinsicGuess = false;
 
   // 3D axes for drawing pose in the window
   vector<Point3f> axes;
   axes.push_back(Point3f(0.0, 0.0, 0.0)); // origin
-  axes.push_back(Point3f(1.0, 0.0, 0.0)); // X
-  axes.push_back(Point3f(0.0, 1.0, 0.0)); // Y
-  axes.push_back(Point3f(0.0, 0.0, 1.0)); // Z
+  axes.push_back(Point3f(10.0, 0.0, 0.0)); // X
+  axes.push_back(Point3f(0.0, 10.0, 0.0)); // Y
+  axes.push_back(Point3f(0.0, 0.0, 10.0)); // Z
    
   // Check if camera opened successfully
   if(!cap.isOpened()){
@@ -142,16 +159,25 @@ int main( int argc, char** argv ){
   auto KF_call_time = std::chrono::high_resolution_clock::now();
 
   // ros
-  ros::init(argc, argv, "pose_estimator");
+  ros::init(argc, argv, "ship_rel_pose_estimator");
   ros::NodeHandle n;
-  ros::Publisher pose_pub = n.advertise<geometry_msgs::Pose>("camera_pose",1000);
-  geometry_msgs::Pose camera_pose;
+  ros::Publisher pose_pub = n.advertise<nav_msgs::Odometry>("ship_rel_pose",1);
+  ros::Publisher euler_pub = n.advertise<geometry_msgs::Vector3>("ship_rel_euler",1);
+  nav_msgs::Odometry camera_pose;
+  geometry_msgs::Vector3 ship_euler;
+  ros::Subscriber sub = n.subscribe("/rs_t265/acceleration", 1, accel_callback);
   
   // tracking
   bool tracking = false;
   bool detected = false;
   int crop_fact = 1;
   Point2f kp_bias = Point(0,0);
+
+
+  // int ns = 100;
+  // Mat samples = Mat::zeros(ns, 1, CV_64FC1);
+  // Scalar mean, std_dev;
+  // int nsi = 0;
 
   // main loop, loop over images from video until esc is pressed
   while(1){
@@ -326,6 +352,8 @@ int main( int argc, char** argv ){
 
       filtered_best_matches = best_matches;
 
+      // cout << "No. of good matches: " << filtered_best_matches.size() ;
+
       // // check for valid homography
       // if (! H.empty())
       // { 
@@ -394,31 +422,72 @@ int main( int argc, char** argv ){
               solvePnPRefineLM(obj_corners3D, scene_corners, K_matrix/scale, Mat::zeros(5, 1, CV_64FC1), rvec, tvec,
                       TermCriteria(TermCriteria::EPS+TermCriteria::COUNT, 20, FLT_EPSILON) );
 
-              //filter
+              // read vehicle acceleration
+              ros::spinOnce();
+
+              // kalman filter the positions
               auto now = std::chrono::high_resolution_clock::now();
               dt = chrono::duration_cast<chrono::microseconds>(now - KF_call_time).count()/1000000.0f;
               KF_call_time = now;
+              
+              if(chrono::duration_cast<chrono::microseconds>(now - accel_read_time).count()/1000000.0f > 0.5f) // if no data available 0 is the best guess of vehicle acceleration, since operating in near hover condition
+              {
+                aX = 0.0;
+                aY = 0.0;
+                aZ = 0.0;
+              }
 
-              Kalman_Filter(x_k, Px_k, 0.0, tvec.at<double>(0), sigma_P2, sigma_u2, sigma_M2, dt);
+              Kalman_Filter(x_k, Px_k, -aX, tvec.at<double>(0), sigma_P2, sigma_u2, sigma_M2, dt);
               tvec.at<double>(0) = x_k.at<double>(0);
 
-              Kalman_Filter(y_k, Py_k, 0.0, tvec.at<double>(1), sigma_P2, sigma_u2, sigma_M2, dt);
+              Kalman_Filter(y_k, Py_k, -aY, tvec.at<double>(1), sigma_P2, sigma_u2, sigma_M2, dt);
               tvec.at<double>(1) = y_k.at<double>(0);
 
-              Kalman_Filter(z_k, Pz_k, 0.0, tvec.at<double>(2), sigma_P2, sigma_u2, sigma_M2, dt);
+              Kalman_Filter(z_k, Pz_k, -aZ, tvec.at<double>(2), sigma_P2, sigma_u2, sigma_M2, dt);
               tvec.at<double>(2) = z_k.at<double>(0);
+
+              // Low pass filter the orientation
+              rvec_filt = 0.1*rvec_filt + 0.9*rvec;
+              rvec = rvec_filt;
+
+              // publisht euler angles
+              Mat rotmat;
+              Rodrigues(rvec, rotmat);
+              Vec3f euler = rotationMatrixToEulerAngles(rotmat);
+
+              
+              ship_euler.x = euler[0]*180.0/pi;
+              ship_euler.y = euler[1]*180.0/pi;
+              ship_euler.z = euler[2]*180.0/pi;
+              euler_pub.publish(ship_euler);
+
+              // samples.at<double>(nsi) = tvec.at<double>(2);
+              // nsi++;
+              // if(nsi==ns)
+              //   nsi=0;
+
+              // meanStdDev(samples, mean, std_dev);
+
+              // cout << ", mean: " << mean[0] << ", std_dev: " << std_dev[0] << "\n";
+
               
 
               //publish to ros message
-              camera_pose.position.x = tvec.at<double>(0);
-              camera_pose.position.y = tvec.at<double>(1);
-              camera_pose.position.z = tvec.at<double>(2);
+              camera_pose.header.stamp = ros::Time::now();
+
+              camera_pose.pose.pose.position.x = tvec.at<double>(0);
+              camera_pose.pose.pose.position.y = tvec.at<double>(1);
+              camera_pose.pose.pose.position.z = tvec.at<double>(2);
+
+              camera_pose.twist.twist.linear.x = x_k.at<double>(1);
+              camera_pose.twist.twist.linear.y = y_k.at<double>(1);
+              camera_pose.twist.twist.linear.z = z_k.at<double>(1);
 
               float theta = sqrt(pow(rvec.at<double>(0),2.0) + pow(rvec.at<double>(1),2.0) + pow(rvec.at<double>(2),2.0));
-              camera_pose.orientation.x = rvec.at<double>(0)/theta * sin(theta/2.0);
-              camera_pose.orientation.y = rvec.at<double>(1)/theta * sin(theta/2.0);
-              camera_pose.orientation.z = rvec.at<double>(2)/theta * sin(theta/2.0);
-              camera_pose.orientation.w = cos(theta/2.0);
+              camera_pose.pose.pose.orientation.x = rvec.at<double>(0)/theta * sin(theta/2.0);
+              camera_pose.pose.pose.orientation.y = rvec.at<double>(1)/theta * sin(theta/2.0);
+              camera_pose.pose.pose.orientation.z = rvec.at<double>(2)/theta * sin(theta/2.0);
+              camera_pose.pose.pose.orientation.w = cos(theta/2.0);
 
               pose_pub.publish(camera_pose);
 
@@ -462,12 +531,12 @@ int main( int argc, char** argv ){
     //-- Show detected matches
     imshow( "Good Matches & Object detection", img_matches );
 
-    #if defined measure_exec_time
-    // execution time
-      auto stop = std::chrono::high_resolution_clock::now();
-      auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-      std::cout << "Basic Execution time: " << duration.count()/1000000.0f << std::endl;
-    #endif
+    // #if defined measure_exec_time
+    // // execution time
+    //   auto stop = std::chrono::high_resolution_clock::now();
+    //   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+    //   std::cout << "Basic Execution time: " << duration.count()/1000000.0f << std::endl;
+    // #endif
     
 
     // Press  ESC on keyboard to exit
@@ -571,4 +640,46 @@ void Kalman_predict(Mat &x_k, Mat &P_k, const double u_k, const double sigma_P2,
   P_k = F_k*P_k*F_k.t() + Q_k*sigma_P2 + Qu_k*sigma_u2; // sigma_P2 is continuous time white noise intensity
 
 }
+
+// Checks if a matrix is a valid rotation matrix.
+bool isRotationMatrix(Mat &R)
+{
+    Mat Rt;
+    transpose(R, Rt);
+    Mat shouldBeIdentity = Rt * R;
+    Mat I = Mat::eye(3,3, shouldBeIdentity.type());
+
+    return  norm(I, shouldBeIdentity) < 1e-6;
+
+}
+
+// Calculates rotation matrix to euler angles
+// The result is the same as MATLAB except the order
+// of the euler angles ( x and z are swapped ).
+Vec3f rotationMatrixToEulerAngles(Mat &R)
+{
+
+    assert(isRotationMatrix(R));
+
+    float sy = sqrt(R.at<double>(0,0) * R.at<double>(0,0) +  R.at<double>(1,0) * R.at<double>(1,0) );
+
+    bool singular = sy < 1e-6; // If
+
+    float x, y, z;
+    if (!singular)
+    {
+        x = atan2(R.at<double>(2,1) , R.at<double>(2,2));
+        y = atan2(-R.at<double>(2,0), sy);
+        z = atan2(R.at<double>(1,0), R.at<double>(0,0));
+    }
+    else
+    {
+        x = atan2(-R.at<double>(1,2), R.at<double>(1,1));
+        y = atan2(-R.at<double>(2,0), sy);
+        z = 0;
+    }
+    return Vec3f(x, y, z);
+
+}
+
 

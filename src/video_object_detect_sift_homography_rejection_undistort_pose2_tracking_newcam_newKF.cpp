@@ -11,12 +11,14 @@
 
 #include "ros/ros.h"
 #include "geometry_msgs/Pose.h"
+#include <armadillo>
 
 #include <chrono>
 
 using namespace std;
 using namespace cv;
 using namespace cv::xfeatures2d;
+// using namespace arma;
 
 #define measure_exec_time
 
@@ -136,8 +138,8 @@ int main( int argc, char** argv ){
   }
 
   // kalman filter
-  Mat x_k = Mat::zeros(2, 1, CV_64FC1), y_k = Mat::zeros(2, 1, CV_64FC1), z_k = Mat::zeros(2, 1, CV_64FC1);
-  Mat Px_k = Mat::eye(2, 2, CV_64FC1) * 100.0, Py_k = Mat::eye(2, 2, CV_64FC1) * 100.0, Pz_k = Mat::eye(2, 2, CV_64FC1) * 100.0;
+  Mat x_k = Mat::zeros(4, 1, CV_64FC1), y_k = Mat::zeros(4, 1, CV_64FC1), z_k = Mat::zeros(4, 1, CV_64FC1);
+  Mat Px_k = Mat::eye(4, 4, CV_64FC1) * 100.0, Py_k = Mat::eye(4, 4, CV_64FC1) * 100.0, Pz_k = Mat::eye(4, 4, CV_64FC1) * 100.0;
   double dt = 0.0, sigma_P2 = pow(10.0, -3.0), sigma_u2 = pow(10.0, -3.0), sigma_M2 = 0.1*pow(10.0, -5.0);
   auto KF_call_time = std::chrono::high_resolution_clock::now();
 
@@ -491,22 +493,36 @@ int main( int argc, char** argv ){
 
 void Kalman_Filter(Mat &x_k, Mat &P_k, const double u_k, const double z_k, const double sigma_P2, const double sigma_u2, const double sigma_M2, const double dt)
 {
-  if(x_k.type()!=CV_64FC1 || P_k.type()!=CV_64FC1 || x_k.size()!=Size(1,2) || P_k.size()!=Size(2,2) )
+  if(x_k.type()!=CV_64FC1 || P_k.type()!=CV_64FC1 || x_k.size()!=Size(1,4) || P_k.size()!=Size(4,4) )
     throw invalid_argument("Inpur Error in Kalman filter, matrices size or type wrong!!");
 
-  Mat F_k = Mat::zeros(2, 2, CV_64FC1);
-  F_k.at<double>(0,0) = 1.0;
-  F_k.at<double>(0,1) = dt;
-  F_k.at<double>(1,0) = 0.0;
-  F_k.at<double>(1,1) = 1.0;
+  // calculating F_k using armadillo
+  arma::mat A(4,4, arma::fill::zeros);
+  A(0,1) = 1.0;
+  A(1,3) = 1.0;
+  A(2,3) = 1.0;
+  A(3,2) = -1.0;
+  A(3,3) = -0.8944;
 
-  Mat Q_k = Mat::zeros(2, 2, CV_64FC1);
-  Q_k.at<double>(0,0) = 1.0/3.0 * pow(dt, 3.0);
-  Q_k.at<double>(0,1) = 1.0/2.0 * pow(dt, 2.0);
-  Q_k.at<double>(1,0) = 1.0/2.0 * pow(dt, 2.0);
-  Q_k.at<double>(1,1) = 1.0/1.0 * pow(dt, 1.0);
+  arma::mat Fk_arma = arma::expmat(A*dt);
+  Fk_arma = Fk_arma.t();
+  Mat F_k(4, 4, CV_64FC1, Fk_arma.memptr());
 
-  Mat Qu_k = Mat::zeros(2, 2, CV_64FC1);
+
+  // calculating Q_K using armadillo
+  arma::mat Lambda(8,8, arma::fill::zeros);
+  Lambda(arma::span(0,3), arma::span(0,3)) = -A;
+  Lambda(arma::span(4,7), arma::span(4,7)) = A.t();
+  Lambda(3,7) = 1.0;
+
+  arma::mat eLT = arma::expmat(Lambda*dt);
+  arma::mat Qk_arma = Fk_arma.t() * eLT(arma::span(0,3), arma::span(4,7));
+
+  Qk_arma = Qk_arma.t();
+  Mat Q_k(4, 4, CV_64FC1, Qk_arma.memptr());
+
+  // Qu_k
+  Mat Qu_k = Mat::zeros(4, 4, CV_64FC1);
   Qu_k.at<double>(0,0) = 1.0/4.0 * pow(dt, 4.0);
   Qu_k.at<double>(0,1) = 1.0/2.0 * pow(dt, 3.0);
   Qu_k.at<double>(1,0) = 1.0/2.0 * pow(dt, 3.0);
@@ -521,18 +537,20 @@ void Kalman_Filter(Mat &x_k, Mat &P_k, const double u_k, const double z_k, const
   P_k = F_k*P_k*F_k.t() + Q_k*sigma_P2 + Qu_k*sigma_u2; // sigma_P2 is continuous time white noise intensity
 
   // measurement matrix
-  Mat H_k = Mat::zeros(1, 2, CV_64FC1);
+  Mat H_k = Mat::zeros(1, 4, CV_64FC1);
   H_k.at<double>(0) = 1.0;
 
 
-  // kalman filter gain (assumes H_k = [1, 0])
-  Mat K_KF = Mat::zeros(2, 1, CV_64FC1); 
+  // kalman filter gain (assumes H_k = [1, 0, 0, 0])
+  Mat K_KF = Mat::zeros(4, 1, CV_64FC1); 
   double S_k = P_k.at<double>(0,0) + sigma_M2; // sigma_M2 is discrete time gaussian white noise variance
   K_KF.at<double>(0) = P_k.at<double>(0,0)/S_k;
   K_KF.at<double>(1) = P_k.at<double>(1,0)/S_k;
+  K_KF.at<double>(2) = P_k.at<double>(2,0)/S_k;
+  K_KF.at<double>(3) = P_k.at<double>(3,0)/S_k;
 
   // measurement update
-  Mat temp = Mat::eye(2, 2, CV_64FC1) - K_KF*H_k;
+  Mat temp = Mat::eye(4, 4, CV_64FC1) - K_KF*H_k;
   x_k = temp * x_k + K_KF * z_k;
   P_k = temp * P_k;
 }
@@ -544,19 +562,33 @@ void Kalman_predict(Mat &x_k, Mat &P_k, const double u_k, const double sigma_P2,
   if(x_k.type()!=CV_64FC1 || P_k.type()!=CV_64FC1 || x_k.size()!=Size(1,2) || P_k.size()!=Size(2,2) )
     throw invalid_argument("Inpur Error in Kalman filter, matrices size or type wrong!!");
 
-  Mat F_k = Mat::zeros(2, 2, CV_64FC1);
-  F_k.at<double>(0,0) = 1.0;
-  F_k.at<double>(0,1) = dt;
-  F_k.at<double>(1,0) = 0.0;
-  F_k.at<double>(1,1) = 1.0;
+  // calculating F_k using armadillo
+  arma::mat A(4,4, arma::fill::zeros);
+  A(0,1) = 1.0;
+  A(1,3) = 1.0;
+  A(2,3) = 1.0;
+  A(3,2) = -1.0;
+  A(3,3) = -0.8944;
 
-  Mat Q_k = Mat::zeros(2, 2, CV_64FC1);
-  Q_k.at<double>(0,0) = 1.0/3.0 * pow(dt, 3.0);
-  Q_k.at<double>(0,1) = 1.0/2.0 * pow(dt, 2.0);
-  Q_k.at<double>(1,0) = 1.0/2.0 * pow(dt, 2.0);
-  Q_k.at<double>(1,1) = 1.0/1.0 * pow(dt, 1.0);
+  arma::mat Fk_arma = arma::expmat(A*dt);
+  Fk_arma = Fk_arma.t();
+  Mat F_k(4, 4, CV_64FC1, Fk_arma.memptr());
 
-  Mat Qu_k = Mat::zeros(2, 2, CV_64FC1);
+
+  // calculating Q_K using armadillo
+  arma::mat Lambda(8,8, arma::fill::zeros);
+  Lambda(arma::span(0,3), arma::span(0,3)) = -A;
+  Lambda(arma::span(4,7), arma::span(4,7)) = A.t();
+  Lambda(3,7) = 1.0;
+
+  arma::mat eLT = arma::expmat(Lambda*dt);
+  arma::mat Qk_arma = Fk_arma.t() * eLT(arma::span(0,3), arma::span(4,7));
+
+  Qk_arma = Qk_arma.t();
+  Mat Q_k(4, 4, CV_64FC1, Qk_arma.memptr());
+
+  // Qu_k
+  Mat Qu_k = Mat::zeros(4, 4, CV_64FC1);
   Qu_k.at<double>(0,0) = 1.0/4.0 * pow(dt, 4.0);
   Qu_k.at<double>(0,1) = 1.0/2.0 * pow(dt, 3.0);
   Qu_k.at<double>(1,0) = 1.0/2.0 * pow(dt, 3.0);
