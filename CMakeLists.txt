@@ -1,7 +1,7 @@
 
 cmake_minimum_required(VERSION 2.8.3)
 project(Tracker)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -march=native")
 
 find_package(catkin REQUIRED COMPONENTS geometry_msgs message_generation roscpp)
 
@@ -35,14 +35,16 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${ARMA
 
 
 add_executable(capture src/test_capture.cpp)
-add_executable(video_object_detect src/video_object_detect_sift_homography_rejection_undistort_pose2_tracking_newcam_acceleration.cpp)
+add_executable(video_object_detect src/video_object_detect_sift_homography_rejection_undistort_pose2_tracking_newcam_acceleration_tuning_filter.cpp)
 add_executable(focus src/video_focus.cpp)
 add_executable(arma src/arma_test.cpp)
+add_executable(sample src/video_object_detect_practice.cpp)
 
 target_link_libraries(capture ${OpenCV_LIBRARIES} ${catkin_LIBRARIES})
 target_link_libraries(video_object_detect ${OpenCV_LIBRARIES} ${catkin_LIBRARIES} ${ARMADILLO_LIBRARIES})
 target_link_libraries(focus ${OpenCV_LIBRARIES} ${catkin_LIBRARIES})
 target_link_libraries(arma ${OpenCV_LIBRARIES} ${catkin_LIBRARIES} ${ARMADILLO_LIBRARIES})
+target_link_libraries(sample ${OpenCV_LIBRARIES} ${catkin_LIBRARIES} ${ARMADILLO_LIBRARIES})
 
 install(
   DIRECTORY include/${PROJECT_NAME}/

@@ -59,7 +59,7 @@ int main( int argc, char** argv ){
   int img_width = img_object.size().width;
   int img_height = img_object.size().height;
 
-  resize(img_object, img_object, Size(img_width/3, img_height/3), INTER_AREA);
+  resize(img_object, img_object, Size(img_width/1, img_height/1), INTER_AREA);
   
   // container for scene image
   Mat img_scene;
@@ -72,8 +72,8 @@ int main( int argc, char** argv ){
   cout << "object_image HEIGHT: " << img_height << "\n";
 
   // model image physical dimensions, pose is returned in these dimensions
-  float img_width_length = 24;//24.5;//25.8; // cm
-  double img_height_length = 17;//17.4;//14.6; // cm
+  float img_width_length = 25.8;//16.6;//11.87;//25.8;//11.87;//24;//24.5;//25.8; // cm
+  double img_height_length = 14.6;//16.6;//7.67;//14.6;//7.67;//17;//17.4;//14.6; // cm
 
   // 3D image corners for PnP
   vector<Point3f> obj_corners3D(4);
@@ -131,7 +131,7 @@ int main( int argc, char** argv ){
   distCoeffs.at<double>(4) = -0.02500858; //k3, std_dev +- 0.00012857
 
   // RANSAC parameters
-  float reprojectionError = 1.0;    // maximum allowed distance to consider it an inlier.
+  float reprojectionError = 0.5;    // maximum allowed distance to consider it an inlier.
 
   // for solvePnP
   Mat rvec = Mat::zeros(3, 1, CV_64FC1);          // output rotation vector
@@ -305,13 +305,13 @@ int main( int argc, char** argv ){
     std::vector< DMatch > good_matches12, good_matches21;
     for( int i = 0; i < matches12.size(); i++ )
     { 
-      if( matches12[i].size()>=2 && matches12[i][0].distance <= 3*min_dist12 && matches12[i][0].distance < matches12[i][1].distance * 0.7)
+      if( matches12[i].size()>=2 && matches12[i][0].distance <= 5*min_dist12 && matches12[i][0].distance < matches12[i][1].distance * 0.8)
       { good_matches12.push_back( matches12[i][0]); }
     }
 
     for( int i = 0; i < matches21.size(); i++ )
     { 
-      if( matches21[i].size()>=2 && matches21[i][0].distance <= 3*min_dist21 && matches21[i][0].distance < matches21[i][1].distance * 0.7)
+      if( matches21[i].size()>=2 && matches21[i][0].distance <= 5*min_dist21 && matches21[i][0].distance < matches21[i][1].distance * 0.8)
       { good_matches21.push_back( matches21[i][0]); }
     }
 
@@ -348,7 +348,7 @@ int main( int argc, char** argv ){
 
       // get homography
       Mat mask;
-      Mat H = findHomography( obj, scene, RANSAC, reprojectionError, mask );
+      Mat H = findHomography( obj, scene, RANSAC, reprojectionError, mask, 10000, 0.999 );
 
       filtered_best_matches = best_matches;
 

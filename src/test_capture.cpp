@@ -71,12 +71,15 @@ int main( int argc, char** argv ){
 
 
     // Display the resulting frame
-    imshow( "frame", rectified_frame);
+    imshow( "frame", frame);
 
     // Press  ESC on keyboard to exit
     char c=(char)waitKey(25);
     if(c==27)
+    {
+      // imwrite(String("/home/aero/Desktop/cam_ws/src/Tracker/images/")+ String("scene") + String(".png"), frame);
       break;
+    }
   }
  
   // When everything done, release the video capture object

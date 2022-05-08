@@ -40,13 +40,13 @@ void accel_callback(const geometry_msgs::Vector3::ConstPtr& msg)
 
 int main( int argc, char** argv ){
 
-  if (argc != 3 )
+  if (argc != 2 )
   { readme(); return -1; }
 
   double pi = 4*atan(1.0);
 
   // image of model
-  Mat img_object = imread( String("/home/aero/Desktop/cam_ws/src/Tracker/images/")+ String(argv[2]) + String(".png"), IMREAD_GRAYSCALE );
+  Mat img_object = imread( String("/home/aero/Desktop/cam_ws/src/Tracker/images/")+ String(argv[1]), IMREAD_GRAYSCALE );
   if( !img_object.data)
   { cout<< " --(!) Error reading model image " << endl; return -1; }
   if(img_object.channels() == 3)
@@ -59,7 +59,7 @@ int main( int argc, char** argv ){
   int img_width = img_object.size().width;
   int img_height = img_object.size().height;
 
-  resize(img_object, img_object, Size(img_width/3, img_height/3), INTER_AREA);
+  resize(img_object, img_object, Size(img_width/1, img_height/1), INTER_AREA);
   
   // container for scene image
   Mat img_scene;
@@ -72,8 +72,8 @@ int main( int argc, char** argv ){
   cout << "object_image HEIGHT: " << img_height << "\n";
 
   // model image physical dimensions, pose is returned in these dimensions
-  float img_width_length = 24;//24.5;//25.8; // cm
-  double img_height_length = 17;//17.4;//14.6; // cm
+  float img_width_length = 5.8;//24.5;//25.8; // cm
+  double img_height_length = 5.75;//17.4;//14.6; // cm
 
   // 3D image corners for PnP
   vector<Point3f> obj_corners3D(4);
@@ -87,26 +87,35 @@ int main( int argc, char** argv ){
   detector->detectAndCompute( img_object, Mat(), keypoints_object, descriptors_object );
   cout << "No. of object image features: " << keypoints_object.size() << "\n";
 
-  // model image feature locations (used for comparing feature locations of scene image)
-  vector<Point2f> obj_feature_loc;
-  for (int i = 0; i<keypoints_object.size(); i++)
+  // window for displaying results
+  namedWindow("Good Matches & Object detection", WINDOW_NORMAL);
+
+  
+
+  // // // model image feature locations (used for comparing feature locations of scene image)
+  // // vector<Point2f> obj_feature_loc;
+  // // for (int i = 0; i<keypoints_object.size(); i++)
+  // // {
+  // //   obj_feature_loc.push_back(keypoints_object[i].pt);
+  // // }
+
+
+  
+  
+
+  // // image of model
+  img_scene = imread( String("/home/aero/Desktop/cam_ws/src/Tracker/images/")+ String("scene4") + String(".png"), IMREAD_GRAYSCALE );
+  if( !img_scene.data)
+  { cout<< " --(!) Error reading scene image " << endl; return -1; }
+  if(img_scene.channels() == 3)
   {
-    obj_feature_loc.push_back(keypoints_object[i].pt);
+    cvtColor(img_scene, img_scene, COLOR_BGR2GRAY);
   }
 
 
-  // window for displaying results
-  namedWindow("Good Matches & Object detection", WINDOW_NORMAL);
-  
-
-  // Video stream
-  VideoCapture cap(stoi(argv[1])); 
-  cap.set(CAP_PROP_FPS, 60.0); 
-  cap.set(CAP_PROP_FRAME_WIDTH,1920);
-  cap.set(CAP_PROP_FRAME_HEIGHT,1200);
-  // cap.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M','J','P','G'));
-  img_width = cap.get(CAP_PROP_FRAME_WIDTH);
-  img_height = cap.get(CAP_PROP_FRAME_HEIGHT);
+  // // display model image dimensions
+  img_width = img_scene.size().width;
+  img_height = img_scene.size().height;
 
   cout << "WIDTH: " << img_width << "\n";
   cout << "HEIGHT: " << img_height << "\n";
@@ -131,7 +140,7 @@ int main( int argc, char** argv ){
   distCoeffs.at<double>(4) = -0.02500858; //k3, std_dev +- 0.00012857
 
   // RANSAC parameters
-  float reprojectionError = 1.0;    // maximum allowed distance to consider it an inlier.
+  float reprojectionError = 0.5;    // maximum allowed distance to consider it an inlier.
 
   // for solvePnP
   Mat rvec = Mat::zeros(3, 1, CV_64FC1);          // output rotation vector
@@ -146,11 +155,11 @@ int main( int argc, char** argv ){
   axes.push_back(Point3f(0.0, 10.0, 0.0)); // Y
   axes.push_back(Point3f(0.0, 0.0, 10.0)); // Z
    
-  // Check if camera opened successfully
-  if(!cap.isOpened()){
-    cout << "Error opening video stream or file" << endl;
-    return -1;
-  }
+  // // Check if camera opened successfully
+  // if(!cap.isOpened()){
+  //   cout << "Error opening video stream or file" << endl;
+  //   return -1;
+  // }
 
   // kalman filter
   Mat x_k = Mat::zeros(2, 1, CV_64FC1), y_k = Mat::zeros(2, 1, CV_64FC1), z_k = Mat::zeros(2, 1, CV_64FC1);
@@ -179,8 +188,8 @@ int main( int argc, char** argv ){
   // Scalar mean, std_dev;
   // int nsi = 0;
 
-  // main loop, loop over images from video until esc is pressed
-  while(1){
+  // // main loop, loop over images from video until esc is pressed
+  // while(1){
 
     // to measure main loop exection time
     #if defined measure_exec_time
@@ -190,98 +199,117 @@ int main( int argc, char** argv ){
     // clear vectors
     keypoints_scene.clear();
 
-    // get current frame from video
-    Mat frame;
-    cap >> frame;
+  //   // get current frame from video
+  //   Mat frame;
+  //   cap >> frame;
  
-    // If the frame is empty, continue to the next frame
-    if (frame.empty())
-    {
-      cout <<" ERROR: empty frame received!! \n";
-      continue; 
-    }
+  //   // If the frame is empty, continue to the next frame
+  //   if (frame.empty())
+  //   {
+  //     cout <<" ERROR: empty frame received!! \n";
+  //     continue; 
+  //   }
 
-    // convert to grayscale
-    if(frame.channels() == 3)
-    {
-      cvtColor(frame, frame, COLOR_BGR2GRAY);
-    }
+  //   // convert to grayscale
+  //   if(frame.channels() == 3)
+  //   {
+  //     cvtColor(frame, frame, COLOR_BGR2GRAY);
+  //   }
 
 
 
-    //undistort frames
+  //   //undistort frames
+    Mat frame = img_scene;
     Mat rectified_frame;
     undistort(frame, rectified_frame, K_matrix, distCoeffs);
+
     
-    //resize to a smaller frame for speed
-    int scale = 2; // scale down factor
+  //   //resize to a smaller frame for speed
+    int scale = 1; // scale down factor
     Mat final_frame;
     resize(rectified_frame, img_scene, Size(img_width/scale, img_height/scale), INTER_AREA);
     Mat img_matches = img_scene;
 
-    if(tracking == true)
-    {
-      if(detected == false)
-        crop_fact++;
-      else
-        crop_fact = 1;
 
-      vector<Point2f> corners(4);;
-      projectPoints(obj_corners3D, rvec, tvec, K_matrix/scale, Mat::zeros(5, 1, CV_64FC1), corners);
+
+
+  //   if(tracking == true)
+  //   {
+  //     if(detected == false)
+  //       crop_fact++;
+  //     else
+  //       crop_fact = 1;
+
+  //     vector<Point2f> corners(4);;
+  //     projectPoints(obj_corners3D, rvec, tvec, K_matrix/scale, Mat::zeros(5, 1, CV_64FC1), corners);
       
-      float xmin = corners[0].x, xmax = corners[0].x, ymin = corners[0].y, ymax = corners[0].y;
-      for (int i=1; i<4; i++)
-      {
-        xmin = min(xmin, corners[i].x);
-        xmax = max(xmax, corners[i].x);
+  //     float xmin = corners[0].x, xmax = corners[0].x, ymin = corners[0].y, ymax = corners[0].y;
+  //     for (int i=1; i<4; i++)
+  //     {
+  //       xmin = min(xmin, corners[i].x);
+  //       xmax = max(xmax, corners[i].x);
         
-        ymin = min(ymin, corners[i].y);
-        ymax = max(ymax, corners[i].y);
-      }
+  //       ymin = min(ymin, corners[i].y);
+  //       ymax = max(ymax, corners[i].y);
+  //     }
 
-      Point2f pt1 = Point2f(max(0, (int)(xmin - (xmax - xmin)/2.0 * crop_fact)), max(0, (int)(ymin - (ymax - ymin)/2.0 * crop_fact)) );
-      Point2f pt2 = Point2f(min(img_width/scale, (int)(xmax + (xmax - xmin)/2.0 * crop_fact)), min(img_height/scale, (int)(ymax + (ymax - ymin)/2.0 * crop_fact)) );
-      Rect roi = Rect(pt1, pt2);
+  //     Point2f pt1 = Point2f(max(0, (int)(xmin - (xmax - xmin)/2.0 * crop_fact)), max(0, (int)(ymin - (ymax - ymin)/2.0 * crop_fact)) );
+  //     Point2f pt2 = Point2f(min(img_width/scale, (int)(xmax + (xmax - xmin)/2.0 * crop_fact)), min(img_height/scale, (int)(ymax + (ymax - ymin)/2.0 * crop_fact)) );
+  //     Rect roi = Rect(pt1, pt2);
 
-      if((pt1.x<=0 && pt1.y<=0 && pt2.x>=img_width && pt2.y>=img_height) || crop_fact >=10)
-      {
-        kp_bias.x = 0; kp_bias.y= 0;
-        tracking = false;
-      }
-      else
-      {
-        kp_bias = pt1;
-        // cout << "\n" << roi << "\n";
-        img_scene = img_scene(roi);
-      }
+  //     if((pt1.x<=0 && pt1.y<=0 && pt2.x>=img_width && pt2.y>=img_height) || crop_fact >=10)
+  //     {
+  //       kp_bias.x = 0; kp_bias.y= 0;
+  //       tracking = false;
+  //     }
+  //     else
+  //     {
+  //       kp_bias = pt1;
+  //       // cout << "\n" << roi << "\n";
+  //       img_scene = img_scene(roi);
+  //     }
 
-    }
-    else
-    {
-      kp_bias.x = 0;
-      kp_bias.y = 0;
-    }
+  //   }
+  //   else
+  //   {
+  //     kp_bias.x = 0;
+  //     kp_bias.y = 0;
+  //   }
 
 
 
-    //Detect the keypoints and extract descriptors
+  //   //Detect the keypoints and extract descriptors
     detector->detectAndCompute( img_scene, Mat(), keypoints_scene, descriptors_scene );
-    for (int i=0; i<keypoints_scene.size(); i++)
-    {
-      keypoints_scene[i].pt.x += kp_bias.x;
-      keypoints_scene[i].pt.y += kp_bias.y;
-    }
 
-    // Matching descriptor vectors using FLANN or BruteForce matcher
-    // FlannBasedMatcher matcher;
+  // Mat img_keypoints;
+  // drawKeypoints( img_scene, keypoints_scene, img_keypoints );
+  // imshow("Good Matches & Object detection", img_keypoints );
+
+  // waitKey();
+
+
+  
+
+
+  //   for (int i=0; i<keypoints_scene.size(); i++)
+  //   {
+  //     keypoints_scene[i].pt.x += kp_bias.x;
+  //     keypoints_scene[i].pt.y += kp_bias.y;
+  //   }
+
+  //   // Matching descriptor vectors using FLANN or BruteForce matcher
+  //   // FlannBasedMatcher matcher;
     BFMatcher matcher(NORM_L2);
     
     std::vector<std::vector<cv::DMatch>> matches12, matches21;
     matcher.knnMatch( descriptors_object, descriptors_scene, matches12,2 );
     matcher.knnMatch( descriptors_scene, descriptors_object, matches21,2 );
 
+
+
+
     //-- Quick calculation of min distances between keypoints
-    double min_dist12 = 100;
+    double min_dist12 = 1000;
     for( int i = 0; i < matches12.size(); i++ )
     { 
       if( matches12[i].size()>=1)
@@ -290,7 +318,7 @@ int main( int argc, char** argv ){
       }
     }
 
-    double min_dist21 = 100;
+    double min_dist21 = 1000;
     for( int i = 0; i < matches21.size(); i++ )
     { 
       if( matches21[i].size()>=1)
@@ -301,17 +329,18 @@ int main( int argc, char** argv ){
 
     // printf("-- Min dist : %f \n", min_dist12 );
 
-    //-- Lowe's Ratio test and minimum distance threshold test 
+  //   //-- Lowe's Ratio test and minimum distance threshold test 
     std::vector< DMatch > good_matches12, good_matches21;
+
     for( int i = 0; i < matches12.size(); i++ )
     { 
-      if( matches12[i].size()>=2 && matches12[i][0].distance <= 3*min_dist12 && matches12[i][0].distance < matches12[i][1].distance * 0.7)
+      if( matches12[i].size()>=2 && matches12[i][0].distance <= 3*min_dist12 && matches12[i][0].distance < matches12[i][1].distance * 0.9)
       { good_matches12.push_back( matches12[i][0]); }
     }
 
     for( int i = 0; i < matches21.size(); i++ )
     { 
-      if( matches21[i].size()>=2 && matches21[i][0].distance <= 3*min_dist21 && matches21[i][0].distance < matches21[i][1].distance * 0.7)
+      if( matches21[i].size()>=2 && matches21[i][0].distance <= 3*min_dist21 && matches21[i][0].distance < matches21[i][1].distance * 0.9)
       { good_matches21.push_back( matches21[i][0]); }
     }
 
@@ -328,6 +357,17 @@ int main( int argc, char** argv ){
         }
       }
     }
+
+
+    // drawMatches( img_object, keypoints_object, img_matches.clone(), keypoints_scene,
+    //              best_matches, img_matches, Scalar::all(-1), Scalar::all(-1),
+    //              std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
+
+    // imshow("Good Matches & Object detection", img_matches );
+
+    // waitKey();
+  //   // imwrite(String("/home/aero/Desktop/cam_ws/src/Tracker/images/")+ String("filtered_without_symmetry") + String(".png"), img_matches);  
+    cout << "No. of good matches: " << best_matches.size() << "\n";
 
 
     // some variables
@@ -348,11 +388,12 @@ int main( int argc, char** argv ){
 
       // get homography
       Mat mask;
-      Mat H = findHomography( obj, scene, RANSAC, reprojectionError, mask );
+      Mat H = findHomography( obj, scene, RANSAC, reprojectionError, mask, 100000, 0.9999 );
 
       filtered_best_matches = best_matches;
 
       cout << "No. of good matches: " << filtered_best_matches.size() << "\n";
+
 
       // // check for valid homography
       // if (! H.empty())
@@ -400,8 +441,8 @@ int main( int argc, char** argv ){
             perspectiveTransform( obj_corners, scene_corners, H);
 
             // the transformed quadrilateral should be convex, else something went wrong
-            if(isContourConvex(scene_corners))
-            {
+            // if(isContourConvex(scene_corners))
+            // {
               detected = true;
               tracking = true;
               
@@ -415,6 +456,22 @@ int main( int argc, char** argv ){
               line( img_matches, scene_corners[1] + Point2f( img_object.cols, 0), scene_corners[2] + Point2f( img_object.cols, 0), Scalar( 0, 255, 0), 4 );
               line( img_matches, scene_corners[2] + Point2f( img_object.cols, 0), scene_corners[3] + Point2f( img_object.cols, 0), Scalar( 0, 255, 0), 4 );
               line( img_matches, scene_corners[3] + Point2f( img_object.cols, 0), scene_corners[0] + Point2f( img_object.cols, 0), Scalar( 0, 255, 0), 4 );
+
+              // imshow("Good Matches & Object detection", img_matches );
+
+              // waitKey();
+        //     // }
+        //     // else{
+        //     //   cout << "not convex\n" ;
+        //     // }
+        //   }
+        //   else
+        //   {
+        //     cout << "Homography empty \n " ;
+        //   }
+        // }
+
+
 
               // Pnp and refinement
               solvePnP(obj_corners3D, scene_corners, K_matrix/scale, Mat::zeros(5, 1, CV_64FC1), rvec, tvec, useExtrinsicGuess, SOLVEPNP_IPPE);              
@@ -437,18 +494,18 @@ int main( int argc, char** argv ){
                 aZ = 0.0;
               }
 
-              Kalman_Filter(x_k, Px_k, -aX, tvec.at<double>(0), sigma_P2, sigma_u2, sigma_M2, dt);
-              tvec.at<double>(0) = x_k.at<double>(0);
+              // Kalman_Filter(x_k, Px_k, -aX, tvec.at<double>(0), sigma_P2, sigma_u2, sigma_M2, dt);
+              // // tvec.at<double>(0) = x_k.at<double>(0);
 
-              Kalman_Filter(y_k, Py_k, -aY, tvec.at<double>(1), sigma_P2, sigma_u2, sigma_M2, dt);
-              tvec.at<double>(1) = y_k.at<double>(0);
+              // Kalman_Filter(y_k, Py_k, -aY, tvec.at<double>(1), sigma_P2, sigma_u2, sigma_M2, dt);
+              // // tvec.at<double>(1) = y_k.at<double>(0);
 
-              Kalman_Filter(z_k, Pz_k, -aZ, tvec.at<double>(2), sigma_P2, sigma_u2, sigma_M2, dt);
-              tvec.at<double>(2) = z_k.at<double>(0);
+              // Kalman_Filter(z_k, Pz_k, -aZ, tvec.at<double>(2), sigma_P2, sigma_u2, sigma_M2, dt);
+              // tvec.at<double>(2) = z_k.at<double>(0);
 
               // Low pass filter the orientation
-              rvec_filt = 0.1*rvec_filt + 0.9*rvec;
-              rvec = rvec_filt;
+              // rvec_filt = 0.1*rvec_filt + 0.9*rvec;
+              // rvec = rvec_filt;
 
               // publisht euler angles
               Mat rotmat;
@@ -511,14 +568,23 @@ int main( int argc, char** argv ){
               line( img_matches, axes2D[0] + Point2f( img_object.cols, 0), axes2D[1] + Point2f( img_object.cols, 0), Scalar(255, 0, 0), 4 );
               line( img_matches, axes2D[0] + Point2f( img_object.cols, 0), axes2D[2] + Point2f( img_object.cols, 0), Scalar( 0, 0, 255), 4 );
               line( img_matches, axes2D[0] + Point2f( img_object.cols, 0), axes2D[3] + Point2f( img_object.cols, 0), Scalar( 0, 255, 0), 4 );
-              
+
+              string str = "X: " + to_string(tvec.at<double>(0))  + ", roll: " + to_string(euler[0]*180.0/pi);
+              cv::putText(img_matches, str,cv::Point(50,800),cv::FONT_HERSHEY_DUPLEX,3,cv::Scalar(0,0,255),3,false);
+
+              str = "Y: " + to_string(tvec.at<double>(1)) + ", pitch: " + to_string(euler[1]*180.0/pi);
+              cv::putText(img_matches, str,cv::Point(50,900),cv::FONT_HERSHEY_DUPLEX,3,cv::Scalar(0,0,255),3,false);
+
+              str = "Z: " + to_string(tvec.at<double>(2)) + ", yaw: " + to_string(euler[2]*180.0/pi);
+              cv::putText(img_matches, str,cv::Point(50,1000),cv::FONT_HERSHEY_DUPLEX,3,cv::Scalar(0,0,255),3,false);
+ 
               
 
             }
           }
       //   }
       // }
-    }
+    
     else{
       // printf("No enough matches: %ld\n", good_matches.size());
     }
@@ -528,7 +594,7 @@ int main( int argc, char** argv ){
                  filtered_best_matches, img_matches, Scalar::all(-1), Scalar::all(-1),
                  std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
     }
-    //-- Show detected matches
+    // -- Show detected matches
     imshow( "Good Matches & Object detection", img_matches );
 
     // #if defined measure_exec_time
@@ -539,14 +605,15 @@ int main( int argc, char** argv ){
     // #endif
     
 
-    // Press  ESC on keyboard to exit
-    char c=(char)waitKey(25);
-    if(c==27)
-      break;
-  }
+  //   // Press  ESC on keyboard to exit
+  //   char c=(char)waitKey(25);
+  //   if(c==27)
+  //     break;
+  // }
  
+  waitKey();
   // When everything done, release the video capture object
-  cap.release();
+  // cap.release();
 
   // Closes all the frames
   destroyAllWindows();

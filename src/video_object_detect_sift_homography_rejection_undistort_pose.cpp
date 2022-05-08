@@ -315,8 +315,39 @@ int main( int argc, char** argv ){
               rvec = rvecs[0];
               rvec = tvecs[0];
 
+              for(int i = 0; i < rvec.size(); i++)
+              {
+                
+              }
+
               // solvePnPRansac( obj_3D, scene_2D, K_matrix/scale, Mat::zeros(5, 1, CV_64FC1), rvec, tvec,
               //         useExtrinsicGuess, iterationsCount, reprojectionError/2.0, confidence,
+
+
+
+
+
+
+
+
+
+
+
+
+              
+              
+
+
+
+
+
+
+
+
+
+
+
+
               //         inliers_id, SOLVEPNP_ITERATIVE );
               // useExtrinsicGuess = true;
 
