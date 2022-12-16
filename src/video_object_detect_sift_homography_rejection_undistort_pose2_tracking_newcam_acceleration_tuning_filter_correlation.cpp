@@ -21,11 +21,24 @@ using namespace cv::xfeatures2d;
 
 #define measure_exec_time
 
+template <typename S>
+ostream& operator<<(ostream& os,
+                    const vector<S>& vector)
+{
+    // Printing all the elements
+    // using <<
+    for (auto element : vector) {
+        os << element << " ";
+    }
+    return os;
+}
+
 void readme();
 void Kalman_Filter(Mat &, Mat &, const double, const double, const double, const double, const double, const double);
 void Kalman_predict(Mat &, Mat &, const double, const double, const double, const double);
 bool isRotationMatrix(Mat &);
 Vec3f rotationMatrixToEulerAngles(Mat &);
+std::vector< DMatch > correlation_test(std::vector< DMatch >, Mat, Mat);
 
 double aX = 0.0, aY = 0.0, aZ = 0.0;
 auto accel_read_time = std::chrono::high_resolution_clock::now();
@@ -85,6 +98,7 @@ int main( int argc, char** argv ){
   std::vector<KeyPoint> keypoints_object, keypoints_scene;
   Mat descriptors_object, descriptors_scene;
   detector->detectAndCompute( img_object, Mat(), keypoints_object, descriptors_object );
+  cout << descriptors_object.rows << ", " << descriptors_object.cols << "\n";
   cout << "No. of object image features: " << keypoints_object.size() << "\n";
 
   // model image feature locations (used for comparing feature locations of scene image)
@@ -100,10 +114,13 @@ int main( int argc, char** argv ){
   
 
   // Video stream
-  VideoCapture cap(stoi(argv[1])); 
-  cap.set(CAP_PROP_FPS, 60.0); 
+  VideoCapture cap(stoi(argv[1]), CAP_V4L2); 
+  cap.set(CAP_PROP_FPS, 120.0); 
   cap.set(CAP_PROP_FRAME_WIDTH,1920);
   cap.set(CAP_PROP_FRAME_HEIGHT,1200);
+  cap.set(CAP_PROP_GAIN, 40);
+  // cout << "Exposure:" << cap.get(CAP_PROP_GAIN) << endl;
+
   // cap.set(CAP_PROP_FOURCC, VideoWriter::fourcc('M','J','P','G'));
   img_width = cap.get(CAP_PROP_FRAME_WIDTH);
   img_height = cap.get(CAP_PROP_FRAME_HEIGHT);
@@ -115,7 +132,7 @@ int main( int argc, char** argv ){
   //      [ fx   0  cx ]
   //      [  0  fy  cy ]
   //      [  0   0   1 ]
-  Mat K_matrix = Mat::zeros(3, 3, CV_64FC1);
+  Mat K_matrix = Mat::zeros(3, 3, CV_64FC1); // C1 means 1 channel can be upto C4 in opencv
   K_matrix.at<double>(0, 0) = 1028.7226; //fx, std_dev +- 0.4608     
   K_matrix.at<double>(1, 1) = 1028.8745; //fy, std_dev +- 0.4441     
   K_matrix.at<double>(0, 2) = 978.0923; //cx, std_dev +- 0.2824     
@@ -280,42 +297,30 @@ int main( int argc, char** argv ){
     matcher.knnMatch( descriptors_object, descriptors_scene, matches12,2 );
     matcher.knnMatch( descriptors_scene, descriptors_object, matches21,2 );
 
-    //-- Quick calculation of min distances between keypoints
-    double min_dist12 = 100;
-    for( int i = 0; i < matches12.size(); i++ )
-    { 
-      if( matches12[i].size()>=1)
-      { 
-        if( matches12[i][0].distance < min_dist12 ) min_dist12 = matches12[i][0].distance;
-      }
-    }
-
-    double min_dist21 = 100;
-    for( int i = 0; i < matches21.size(); i++ )
-    { 
-      if( matches21[i].size()>=1)
-      { 
-        if( matches21[i][0].distance < min_dist21 ) min_dist21 = matches21[i][0].distance;
-      }
-    }
 
     // printf("-- Min dist : %f \n", min_dist12 );
 
-    //-- Lowe's Ratio test and minimum distance threshold test 
+    //-- Lowe's Ratio test 
     std::vector< DMatch > good_matches12, good_matches21;
     for( int i = 0; i < matches12.size(); i++ )
     { 
-      if( matches12[i].size()>=2 && matches12[i][0].distance <= 100*min_dist12 && matches12[i][0].distance < matches12[i][1].distance * 0.8)
+      if( matches12[i].size()>=2 && matches12[i][0].distance < matches12[i][1].distance * 0.8)
       { good_matches12.push_back( matches12[i][0]); }
     }
 
     for( int i = 0; i < matches21.size(); i++ )
     { 
-      if( matches21[i].size()>=2 && matches21[i][0].distance <= 100*min_dist21 && matches21[i][0].distance < matches21[i][1].distance * 0.8)
+      if( matches21[i].size()>=2 && matches21[i][0].distance < matches21[i][1].distance * 0.8)
       { good_matches21.push_back( matches21[i][0]); }
     }
 
-    // Symmetry test
+
+    //----- Correlation test
+    good_matches12 = correlation_test(good_matches12, descriptors_object, descriptors_scene);
+    good_matches21 = correlation_test(good_matches21, descriptors_scene, descriptors_object);
+
+
+    //----- Symmetry test
     std::vector< DMatch > best_matches;
     for (int i = 0; i<good_matches12.size(); i++)
     {
@@ -353,38 +358,6 @@ int main( int argc, char** argv ){
       filtered_best_matches = best_matches;
 
       cout << "No. of good matches: " << filtered_best_matches.size() << "\n";
-
-      // // check for valid homography
-      // if (! H.empty())
-      // { 
-      //   vector<Point2f> scene_feature_loc;
-      //   perspectiveTransform(obj_feature_loc, scene_feature_loc, H);
-
-      //   // filter inliers and also based on relative location of features, (relative location one is useless probably since homography reprojection error already check that)
-      //   filtered_best_matches.clear();
-      //   for ( int i =0; i<best_matches.size(); i++)
-      //   {
-      //     Point2f diff = scene_feature_loc[best_matches[i].queryIdx] - keypoints_scene[ best_matches[i].trainIdx ].pt;
-      //     if((unsigned int)mask.at<uchar>(i))// && sqrt(diff.x*diff.x + diff.y*diff.y) < reprojectionError)
-      //     {
-      //       filtered_best_matches.push_back(best_matches[i]);
-      //     }
-      //   }
-      //   best_matches = filtered_best_matches;
-
-      //   // homography from the filtered out matches
-      //   if(best_matches.size() >= 4)// no. of matches to use for pose estimation
-      //   {
-      //     //-- Get the keypoints from the good matches
-      //     obj.clear();
-      //     scene.clear();
-      //     for( size_t i = 0; i < filtered_best_matches.size(); i++ )
-      //     {
-      //       obj.push_back( keypoints_object[ filtered_best_matches[i].queryIdx ].pt );
-      //       scene.push_back( keypoints_scene[ filtered_best_matches[i].trainIdx ].pt );
-      //     }
-      //     // do homography again but with a lower reprojection error
-      //     H = findHomography( obj, scene, RANSAC, reprojectionError/2.0, mask);
 
           // homography should be valid
           if(!H.empty())
@@ -683,3 +656,50 @@ Vec3f rotationMatrixToEulerAngles(Mat &R)
 }
 
 
+std::vector< DMatch > correlation_test(std::vector< DMatch > matches, Mat descriptors_object, Mat descriptors_scene)
+{
+  std::vector< DMatch > filtered_matches;
+
+  for (int i = 0; i<matches.size(); i++)
+  {
+    std::vector<double> descriptor1 = descriptors_object.row(matches[i].queryIdx);
+    std::vector<double> descriptor2 = descriptors_scene.row(matches[i].trainIdx);
+
+
+    double mean_1 = 0.0, mean_2 = 0.0;
+    for(int i = 0; i< descriptor1.size(); i++)
+    {
+      mean_1 += descriptor1[i];
+      mean_2 += descriptor2[i];
+    }
+
+    mean_1 = mean_1 / descriptor1.size();
+    mean_2 = mean_2 / descriptor2.size();
+
+    for(auto& element : descriptor1)
+    element -= mean_1;
+
+    for(auto& element : descriptor2)
+    element -= mean_2;
+
+    double cov = 0.0, var1 = 0.0, var2 = 0.0;
+    for(int i = 0; i< descriptor1.size(); i++)
+    {
+      cov += descriptor1[i] * descriptor2[i];
+      var1 += descriptor1[i] * descriptor1[i];
+      var2 += descriptor2[i] * descriptor2[i];
+    }
+
+
+    double corr_coef = cov/sqrt(var1 * var2);
+
+    if(corr_coef > 0.5)
+    {
+      filtered_matches.push_back(matches[i]);
+    }
+
+  }
+
+  return filtered_matches;
+
+}
