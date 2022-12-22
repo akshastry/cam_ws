@@ -107,6 +107,13 @@ try
     distCoeffs.at<double>(3) = +0.0; //p2, std_dev +- 0.000
     distCoeffs.at<double>(4) = -0.02500858; //k3, std_dev +- 0.00012857
 
+    Mat invK_matrix = Mat::zeros(3, 3, CV_64FC1); // C1 means 1 channel can be upto C4 in opencv
+    invK_matrix.at<double>(0, 0) = 1.0 / K_matrix.at<double>(0, 0); //1/fx
+    invK_matrix.at<double>(1, 1) = 1.0 / K_matrix.at<double>(1, 1); //1/fy     
+    invK_matrix.at<double>(0, 2) = -K_matrix.at<double>(0, 2) / K_matrix.at<double>(0, 0); //-cx/fx     
+    invK_matrix.at<double>(1, 2) = -K_matrix.at<double>(1, 2) / K_matrix.at<double>(1, 1); //-cy/fy
+    invK_matrix.at<double>(2, 2) = 1;    
+
     // Image ctr
     int img_no = 1;
 
@@ -272,9 +279,6 @@ try
     cout << "unit T2: " << endl << T2 / norm(T2) << endl;
     cout << "R2: " << endl << R2 << endl << endl;
 
-    // imshow("image2", image2);
-    // cout << "Proceed: ";
-    // cin >> s;
 
     // create SIFT detector
     Ptr<SIFT> detector = SIFT::create( );
@@ -298,18 +302,63 @@ try
     vector<Point2f> MATCHEDpoints1, MATCHEDpoints2;
     for (auto x : matches)
     {
-    MATCHEDpoints1.push_back(keypoints1[x.queryIdx].pt);
-    MATCHEDpoints2.push_back(keypoints2[x.trainIdx].pt);
+    MATCHEDpoints1.push_back(keypoints1.at(x.queryIdx).pt);
+    MATCHEDpoints2.push_back(keypoints2.at(x.trainIdx).pt);
     }
 
-    auto E_mat = findEssentialMat( MATCHEDpoints1, MATCHEDpoints2, K_matrix, RANSAC);
+
+    vector<uchar> mask;
+    Mat E_mat = findEssentialMat( MATCHEDpoints1, MATCHEDpoints2, K_matrix, RANSAC, 0.999, 1.0, mask);
+
+    // draw the inlier matches in green and outlier in red
+    Mat OutImg;
+
+    vector<char> char_mask;
+    for(auto x: mask)
+        char_mask.push_back(x);
+
+    drawMatches(rectified_image1, keypoints1, rectified_image2, keypoints2, matches, OutImg, Scalar(0,255,0), Scalar::all(-1),
+                 char_mask, DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+
+
+    resize(OutImg, OutImg, cv::Size(), 0.5, 0.5);
+    imshow("inlier matches", OutImg);
+
+    vector<char> invert_mask;
+    for(auto x: char_mask)
+        invert_mask.push_back(1-(int)x);
+    drawMatches(rectified_image1, keypoints1, rectified_image2, keypoints2, matches, OutImg, Scalar(0,0,255), Scalar::all(-1),
+                 invert_mask, DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+
+    resize(OutImg, OutImg, cv::Size(), 0.5, 0.5);
+    imshow("outlier matches", OutImg);
+    waitKey(0); // Wait for a keystroke in the window
+
+    //get inliers and outliers
+    vector<Point2f> Inlier_points1, Inlier_points2, Outlier_points1, Outlier_points2;
+    for (int i=0; i<mask.size(); i++)
+    {
+        if(mask.at(i))
+        {
+            Inlier_points1.push_back(MATCHEDpoints1.at(i));
+            Inlier_points2.push_back(MATCHEDpoints2.at(i));
+        }
+        else
+        {
+            Outlier_points1.push_back(MATCHEDpoints1.at(i));
+            Outlier_points2.push_back(MATCHEDpoints2.at(i));
+        }
+    }
+
+    // decompose essential matrix
     Mat Rot1, Rot2, t;
     decomposeEssentialMat(E_mat, Rot1, Rot2, t);
     Tdisp = t;
     Rot = Rot2;
 
+    // pi :)
     double pi = 4.0*atan(1.0);
-    // R.setEulerYPR(-pi/2, 0.0, pi);
+    // R3 is rotation of camera wrt to realsense axes
     Mat R3 = Mat::zeros(3, 3, CV_64FC1);
 
     R3.at<double>(0,0) = 0.0;
@@ -324,47 +373,116 @@ try
     R3.at<double>(1,2) = 0.0;
     R3.at<double>(2,2) = -1.0;
 
-    // location of camera wrt to realsense center in realsense coordinate axes
+    // T3 is location of camera wrt to realsense center in realsense coordinate axes
     Mat T3 = Mat::zeros(3,1, CV_64FC1);
     T3.at<double>(0) = 0.01;
     T3.at<double>(1) = 0.03;
     T3.at<double>(2) = 0.01;
 
+    // rotation and translation from relasense
     Mat rot = R3.t() * R1.t() * R2 * R3;
-    Mat tdisp =  (R1*R3).t() * (T2 - T1 + (R2 - R1)*T3 );
+    Mat tdisp =  (R2*R3).t() * (T1 - T2 + (R1 - R2)*T3 );
+    tdisp = tdisp / norm(tdisp);
 
+
+    // display rotation and translation from realsense
     cout << "translation epipolar: " << endl;
     cout << Tdisp << endl;
-    // cout << "translation realsense: " << endl;
-    // cout << tdisp << endl;
     cout << "normalized realsense translation: " << endl;
-    cout << tdisp / norm(tdisp) << endl;
-
-    // tdisp =  R1.t() * (T2 - T1);
-    // cout << tdisp / norm(tdisp) << endl;
-    // cout << R3.t() * (tdisp / norm(tdisp)) << endl;    
+    cout << tdisp / norm(tdisp) << endl << endl;
 
     cout << "rotation epipolar: " << endl;
     cout << Rot1 << endl;
     cout << Rot2 << endl;
     cout << "rotation realsense: " << endl;
-    cout << rot.t() << endl;
+    cout << rot.t() << endl << endl;
         
-    cout << endl << endl;
-    cout << "Initial E_mat: " << endl;
-    cout << E_mat << endl << endl;
-    cout << "Composed E_mat: " << endl;
-    // cout << Rot1 * crossmat(Tdisp.at<double>(0), Tdisp.at<double>(1), Tdisp.at<double>(2))  << endl << endl;
-
-    // cout << Rot1.t() * crossmat(Tdisp.at<double>(0), Tdisp.at<double>(1), Tdisp.at<double>(2))  << endl << endl;
-
-    cout << crossmat(Tdisp.at<double>(0), Tdisp.at<double>(1), Tdisp.at<double>(2)) * Rot1 << endl << endl;
-
-    // cout << crossmat(Tdisp.at<double>(0), Tdisp.at<double>(1), Tdisp.at<double>(2)) * Rot1.t()  << endl << endl;
-
-    tdisp = tdisp / norm(tdisp);
-    cout << crossmat(tdisp.at<double>(0), tdisp.at<double>(1), tdisp.at<double>(2)) * rot.t() << endl << endl;    
     
+    // display initial determined essential matrix and those composed from rotation and translation
+    cout << "Initial E_mat: " << endl;
+    E_mat = E_mat / norm(E_mat);
+    cout << E_mat << endl << endl; 
+    
+    cout << "Composed E_mat: " << endl;
+    Mat Emat1 = crossmat(Tdisp.at<double>(0), Tdisp.at<double>(1), Tdisp.at<double>(2)) * Rot2;
+    Emat1 = Emat1 / norm(Emat1);
+    cout << Emat1 << endl << endl;
+
+    Mat Emat2 = crossmat(Tdisp.at<double>(0), Tdisp.at<double>(1), Tdisp.at<double>(2)) * Rot1;
+    Emat2 = Emat2 / norm(Emat2);
+    cout << Emat2 << endl << endl;
+
+    Mat E_mat2 = crossmat(tdisp.at<double>(0), tdisp.at<double>(1), tdisp.at<double>(2)) * rot.t();
+    E_mat2 = E_mat2 / norm(E_mat2);
+    cout << E_mat2 << endl << endl;
+    
+
+    // diplay residuals of inliers and outliers
+    vector<double> inlier_res, outlier_res;
+    cout << endl << "Inlier values: " << endl;
+    for(int i = 0; i < Inlier_points1.size(); i++)
+    {
+        Mat p2 = Mat::zeros(3,1, CV_64FC1);
+        Mat p1 = Mat::zeros(3,1, CV_64FC1);
+
+        p2.at<double>(0) = Inlier_points2.at(i).x;
+        p2.at<double>(1) = Inlier_points2.at(i).y;
+        p2.at<double>(2) = 1.0;
+
+        p1.at<double>(0) = Inlier_points1.at(i).x;
+        p1.at<double>(1) = Inlier_points1.at(i).y;
+        p1.at<double>(2) = 1.0;
+
+        Mat res = p2.t() * invK_matrix.t() * E_mat2 * invK_matrix * p1;
+        inlier_res.push_back(res.at<double>(0));
+
+        cout << res.at<double>(0) << ", ";
+    }
+    cout << endl;
+    
+
+    cout << endl << "Outlier values: " << endl;
+    for(int i = 0; i < Outlier_points1.size(); i++)
+    {
+        Mat p2 = Mat::zeros(3,1, CV_64FC1);
+        Mat p1 = Mat::zeros(3,1, CV_64FC1);
+
+        p2.at<double>(0) = Outlier_points2.at(i).x;
+        p2.at<double>(1) = Outlier_points2.at(i).y;
+        p2.at<double>(2) = 1.0;
+
+        p1.at<double>(0) = Outlier_points1.at(i).x;
+        p1.at<double>(1) = Outlier_points1.at(i).y;
+        p1.at<double>(2) = 1.0;
+
+        Mat res = p2.t() * invK_matrix.t() * E_mat2 * invK_matrix * p1;
+        outlier_res.push_back(res.at<double>(0));
+
+        cout << res.at<double>(0) << ", ";
+    }
+    cout << endl;
+
+    // mean and variance of inlier and outlier residuals
+    double inlier_res_mean = accumulate(inlier_res.begin(), inlier_res.end(), 0.0) / inlier_res.size();
+    for_each(inlier_res.begin(), inlier_res.end(), [inlier_res_mean](double &v){
+        v = v - inlier_res_mean;
+        v = v * v;
+    });
+    double inlier_res_var = accumulate(inlier_res.begin(), inlier_res.end(), 0.0) / inlier_res.size();
+
+
+    double outlier_res_mean = accumulate(outlier_res.begin(), outlier_res.end(), 0.0) / outlier_res.size();
+    for_each(outlier_res.begin(), outlier_res.end(), [outlier_res_mean](double &v){
+        v = v - outlier_res_mean;
+        v = v * v;
+    });
+    double outlier_res_var = accumulate(outlier_res.begin(), outlier_res.end(), 0.0) / outlier_res.size();
+
+
+    cout << endl << "inlier_res_mean: " << inlier_res_mean << ", inlier_res_var: " << inlier_res_var << ", inlier_res_stddev: " << sqrt(inlier_res_var) << endl;
+    cout << endl << "outlier_res_mean: " << outlier_res_mean << ", outlier_res_var: " << outlier_res_var << ", outlier_res_stddev: " << sqrt(outlier_res_var) << endl;
+
+
     // When everything done, release the video capture object
     cap.release();
 
